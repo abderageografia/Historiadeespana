@@ -147,6 +147,25 @@ function settings(){document.querySelectorAll('#settings input').forEach(x=>x.ch
 $('start').onclick=newRound;$('cancel').onclick=()=>$('settings').close();$('topics').onclick=settings;$('chooseEnd').onclick=settings;$('again').onclick=restart;$('restart').onclick=restart;$('sectionQuick').onchange=()=>{if(state){const previous=state.section||'all';if(!startRound(state.selected,state.difficulty,$('sectionQuick').value)){$('sectionQuick').value=previous;settings();$('error').textContent='Ese apartado no contiene preguntas de la dificultad elegida. Cambia la dificultad para practicarlo.'}}};document.querySelectorAll('#settings input').forEach(x=>x.onchange=syncSectionSettings);$('pass').onclick=()=>advance('pass');$('review').onclick=()=>advance('review');$('known').onclick=()=>advance('known');$('reveal').onclick=reveal;$('size').onclick=()=>{document.body.classList.toggle('large');$('size').textContent=document.body.classList.contains('large')?'A−':'A+';$('size').setAttribute('aria-pressed',String(document.body.classList.contains('large')));$('size').setAttribute('aria-label',document.body.classList.contains('large')?'Reducir texto':'Ampliar texto')};
 async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{$('saveState').textContent='Este navegador no permite pantalla completa. Puedes ampliar la ventana.'}}
 $('full').onclick=fullscreen;document.addEventListener('keydown',e=>{if($('settings').open||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.repeat)return;if(e.code==='Space'){e.preventDefault();if(state?.queue.length){if(state.revealed)advance('known');else reveal()}}if(e.key.toLowerCase()==='p'){e.preventDefault();advance('pass')}if(e.key.toLowerCase()==='f')fullscreen()});$('settings').addEventListener('cancel',e=>{if(!state)e.preventDefault()});
-try{const s=JSON.parse(localStorage.getItem(KEY));const ids=[...(s?.queue||[]),...(s?.deferred||[]),...(s?.known||[])];if(s&&s.total>0&&ids.length===s.total&&new Set(ids).size===ids.length&&Array.isArray(s.selected)){const valid=id=>DATA.some(q=>q.id===id);s.queue=s.queue.filter(valid);s.deferred=s.deferred.filter(valid);s.known=s.known.filter(valid);s.total=s.queue.length+s.deferred.length+s.known.length;if(s.total>0){if(!s.queue.length&&s.deferred.length){s.queue=shuffle(s.deferred);s.deferred=[];s.reviewRound=(s.reviewRound||0)+1}s.revealed=false;state=s}}}catch{}
+try{
+const s=JSON.parse(localStorage.getItem(KEY));
+const ids=[...(s?.queue||[]),...(s?.deferred||[]),...(s?.known||[])];
+if(s&&s.total>0&&ids.length===s.total&&new Set(ids).size===ids.length&&Array.isArray(s.selected)){
+ const section=s.section||'all',difficulty=Number(s.difficulty)||0;
+ const eligible=DATA.filter(q=>s.selected.includes(q.topic)&&(!difficulty||q.level===difficulty)&&(section==='all'||q.section===section));
+ const validIds=new Set(eligible.map(q=>q.id));
+ s.queue=s.queue.filter(id=>validIds.has(id));
+ s.deferred=s.deferred.filter(id=>validIds.has(id));
+ s.known=s.known.filter(id=>validIds.has(id));
+ const seen=new Set([...s.queue,...s.deferred,...s.known]);
+ const added=eligible.filter(q=>!seen.has(q.id)).map(q=>q.id);
+ if(added.length)s.queue=shuffle([...s.queue,...added]);
+ s.total=eligible.length;
+ if(s.total>0){
+  if(!s.queue.length&&s.deferred.length){s.queue=shuffle(s.deferred);s.deferred=[];s.reviewRound=(s.reviewRound||0)+1}
+  s.revealed=false;state=s;
+ }
+}
+}catch{}
 if(state){state.section=state.section||'all';sectionOptions('sectionQuick',state.selected,state.section);save();render()}else{sectionOptions('sectionQuick',['med-a','med-c','1','2']);settings()}
 </script></body></html>
