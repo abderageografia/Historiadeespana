@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function own(uid) { return signedIn() && request.auth.uid == uid; }
+    match /teachers/{uid}/{document=**} {
+      allow read, write: if own(uid);
+    }
+    match /projections/{token} {
+      allow get: if (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || (resource.data.expiresAt is timestamp && request.time < resource.data.expiresAt);
+      allow list: if false;
+      function validProjection() {
+        return signedIn()
+          && request.resource.data.keys().hasOnly(['ownerUid','topic','question','answer','student','revealed','expiresAt','updatedAt','status'])
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.topic is string && request.resource.data.topic.size() < 300
+          && request.resource.data.question is string && request.resource.data.question.size() < 6000
+          && request.resource.data.answer is string && request.resource.data.answer.size() < 6000
+          && request.resource.data.student is string && request.resource.data.student.size() < 150
+          && request.resource.data.revealed is bool
+          && request.resource.data.status in ['waiting','question','finished','closed']
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt <= request.time + duration.value(9, 'h')
+          && request.resource.data.updatedAt == request.time;
+      }
+      allow create: if validProjection();
+      allow update: if validProjection() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}
