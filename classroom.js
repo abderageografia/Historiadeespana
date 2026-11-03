@@ -38,6 +38,44 @@ async function loadHistory(){const results=[];let cursor=null;for(;;){const cond
 async function historyPanel(){if(!user)return;msg('Cargando notas…');try{history=await loadHistory();$('cloudHistoryBody').replaceChildren();const groups=new Map();for(const e of history){if(!groups.has(e.studentId))groups.set(e.studentId,{name:e.studentName,scores:[],legacy:0});const g=groups.get(e.studentId);if(typeof e.score==='number'&&Number.isFinite(e.score))g.scores.push(e.score);else g.legacy++}for(const g of [...groups.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'))){const tr=document.createElement('tr');for(const value of [g.name,g.scores.length,g.scores.length?g.scores[g.scores.length-1]:'—',g.legacy]){const td=document.createElement('td');td.textContent=value;tr.append(td)}$('cloudHistoryBody').append(tr)}$('cloudHistoryCount').textContent=history.length+' registros, ordenados por fecha. El Excel conserva cada nota por separado; los registros antiguos sin nota no se convierten en números.';$('cloudHistory').showModal();msg('Notas actualizadas.')}catch(e){msg(explain(e),true)}}
 async function downloadExcel(){if(!user)return;$('cloudExcel').disabled=true;msg('Preparando Excel con notas y colores…');try{history=await loadHistory();const bytes=await buildGradeWorkbook(history,H.snapshot().teacher.students,courseYear());const u=URL.createObjectURL(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const a=document.createElement('a');a.href=u;a.download='Notas-Historia-de-Espana-'+courseYear()+'.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(u),1500);msg('Excel descargado: notas por fecha y detalle de cada pregunta.')}catch(e){msg(explain(e),true)}finally{$('cloudExcel').disabled=false}}
 function downloadCSV(){const values=[['Fecha','Alumno','Tema','Pregunta','Nota','Resultado'],...history.map(e=>[new Date(e.at).toLocaleString('es-ES'),e.studentName,e.topic,e.question,typeof e.score==='number'?e.score:'',({correct:'Correcta',partial:'Incompleta',incorrect:'Incorrecta',passed:'Pasada'})[e.outcome]||e.outcome])];const safe=v=>{let s=String(v??'');if(/^[=+@\-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};const csv='\uFEFF'+values.map(row=>row.map(safe).join(';')).join('\r\n');const a=document.createElement('a'),u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='Historial-Historia-Espana.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+
+const CLASS_LINK_RECIPIENT='enavlop380@g.educaand.es';
+let mailSending=false,mailToken=null,mailExpires=0,mailOwner=null;
+function utf8Base64(text){return btoa(String.fromCharCode(...new TextEncoder().encode(text)))}
+function classLinkMailRaw(link){const body='Historia de España · Enlace de la pantalla del aula\n\n'+link+'\n\nAbre este enlace en el ordenador conectado a la pantalla del aula y guárdalo como favorito.\nDesde el móvil, entra en el mando para elegir el tema y comenzar la ronda.\nEl enlace se conserva para las próximas clases.\n';const mime=['To: '+CLASS_LINK_RECIPIENT,'Subject: =?UTF-8?B?'+utf8Base64('Historia de España: enlace de la pantalla del aula')+'?=','MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64','',utf8Base64(body).match(/.{1,76}/g).join('\r\n')].join('\r\n');return utf8Base64(mime).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function mailMessage(text,error=false){$('cloudMailStatus').textContent=text;$('cloudMailStatus').classList.toggle('cloud-error',error)}
+async function emailClassLink(){
+ if(mailSending)return;if(!user||!session){msg('Conecta primero con tu aula para obtener el enlace.',true);return}
+ if(sheetSync.getState().working){mailMessage('Termina primero la conexión con Google y vuelve a pulsar este botón.',true);return}
+ const uid=user.uid,link=projectionUrl();mailSending=true;$('cloudMailLink').disabled=true;$('cloudMailSetup').hidden=true;
+ try{
+  await initialize();
+  if(!mailToken||mailOwner!==uid||Date.now()>=mailExpires){
+   mailMessage('Autoriza el envío de correo con '+CLASS_LINK_RECIPIENT+'.');
+   const provider=new sdk.GoogleAuthProvider();provider.addScope('https://www.googleapis.com/auth/gmail.send');provider.setCustomParameters({login_hint:CLASS_LINK_RECIPIENT,prompt:'select_account'});
+   const result=await sdk.signInWithPopup(sheetAuth,provider);
+   if(result.user.email?.toLowerCase()!==CLASS_LINK_RECIPIENT)throw Error('Selecciona la cuenta '+CLASS_LINK_RECIPIENT+'. No se ha enviado el enlace.');
+   const credential=sdk.GoogleAuthProvider.credentialFromResult(result);
+   if(!credential?.accessToken)throw Error('Google no ha concedido permiso para enviar el correo.');
+   mailToken=credential.accessToken;mailOwner=uid;mailExpires=Date.now()+50*60*1000;
+  }
+  if(user?.uid!==uid)throw Error('La cuenta del profesor ha cambiado. Vuelve a entrar en tu aula.');
+  mailMessage('Enviando enlace a '+CLASS_LINK_RECIPIENT+'…');
+  const response=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+mailToken,'Content-Type':'application/json'},body:JSON.stringify({raw:classLinkMailRaw(link)})});
+  let result={};try{result=await response.json()}catch{}
+  if(!response.ok){
+   const reason=result.error?.details?.find(x=>x.reason)?.reason,message=result.error?.message||'';
+   if(response.status===401){mailToken=null;throw Error('El permiso de envío ha caducado. Pulsa de nuevo para conectar Google.')}
+   if(reason==='SERVICE_DISABLED'||/has not been used|disabled/i.test(message)){$('cloudMailSetup').hidden=false;throw Error('Activa Gmail API en el proyecto historia-de-espana con el enlace de abajo y vuelve a pulsar Enviarme el enlace.')}
+   throw Error(message||'Google no ha permitido enviar el correo. Comprueba el permiso de envío de tu cuenta.');
+  }
+  if(!result.id)throw Error('Google no ha confirmado el envío. Comprueba tu correo antes de volver a enviarlo.');
+  mailMessage('Enlace enviado a '+CLASS_LINK_RECIPIENT+'.');
+ }catch(e){mailMessage(e?.code?explain(e):e.message||'No se ha podido confirmar el envío. Comprueba tu correo.',true)}
+ finally{mailSending=false;$('cloudMailLink').disabled=false}
+}
+$('cloudMailLink').onclick=emailClassLink;
+
 async function copyLink(){try{await navigator.clipboard.writeText(projectionUrl());msg('Enlace permanente copiado. Puedes guardarlo como favorito en la pantalla del aula.')}catch{$('cloudLink').focus();$('cloudLink').select();msg('Selecciona y copia el enlace del campo.')}}
 async function copyRules(){try{const r=await fetch('./firestore.rules');if(!r.ok)throw Error('No se encuentran las reglas.');const rules=await r.text();$('cloudRules').value=rules;$('cloudRules').hidden=false;try{await navigator.clipboard.writeText(rules);msg('Reglas copiadas. Pégalas en Firestore → Reglas y pulsa Publicar.')}catch{$('cloudRules').focus();$('cloudRules').select();msg('Selecciona y copia las reglas del campo.')}}catch(e){msg(e.message,true)}}
 function waitingProjection(text='Clase en espera'){$('projectionStatus').textContent=text;$('projectionName').textContent='';$('projectionTopic').textContent='Historia de España';$('projectionQuestion').textContent='Historia de España';$('projectionYear').textContent='Curso '+courseYear();$('projection').classList.add('projection-landing');$('projectionAnswerBox').hidden=true;$('projectionAnswer').textContent='';$('projectionEmpty').hidden=true}
