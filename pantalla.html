@@ -1,0 +1,6 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historia de España · Aula</title><meta name="referrer" content="no-referrer"><style>body{margin:0;min-height:100svh;display:grid;place-content:center;text-align:center;background:#edf3f1;color:#182e35;font-family:system-ui;padding:24px;box-sizing:border-box}h1{font-size:clamp(36px,7vw,96px);margin:0}p{font-size:22px}small{font-size:16px;max-width:600px;line-height:1.6}</style><h1>Historia de España</h1><p id="year"></p><small id="status">Abre en este ordenador el enlace de proyección que aparece en el mando del profesor.</small><script>
+document.getElementById('year').textContent='Curso '+((new Date().getMonth()>=8?new Date().getFullYear():new Date().getFullYear()-1))+'–'+((new Date().getMonth()>=8?new Date().getFullYear()+1:new Date().getFullYear()));
+let token=new URLSearchParams(location.hash.slice(1)).get('aula');
+try{if(/^[a-f0-9]{40}$/.test(token)){localStorage.setItem('historia-projection-token',token)}else token=localStorage.getItem('historia-projection-token')}catch{}
+if(/^[a-f0-9]{40}$/.test(token)){const target=new URL('./index.html',location.href);target.hash='aula='+token;location.replace(target.href)}
+</script></html>
