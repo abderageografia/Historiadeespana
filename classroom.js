@@ -25,7 +25,7 @@ function localResume(){try{return JSON.parse(localStorage.getItem('historia-aula
 function rememberCurrent(){if(!active||!user||!session)return;try{const x=H.snapshot();localStorage.setItem('historia-aula-resume-'+user.uid,JSON.stringify({round:x.round,teacher:x.teacher,session,savedAt:Date.now()}))}catch{}}
 async function startClass(){if(!user)return;if(!navigator.onLine){msg('Sin conexión. La clase guardada se conectará al recuperar Internet.',true);return}if(active){renderPanel();return}if(busy)return;busy=true;$('cloudStart').disabled=true;msg('Recuperando tu clase…');try{await initialize();const saved=await loadCurrent(),cached=localResume();const remoteTime=saved?.updatedAt?.toMillis?.()||0;const resume=cached?.savedAt>remoteTime&&sessionIsValid(cached.session)&&(!saved?.session||cached.session.token===saved.session.token)?cached:saved;
 if(resume?.teacher)H.applyTeacher(resume.teacher);if(sessionIsValid(saved?.session)){session={...saved.session};}else if(sessionIsValid(resume?.session)){session={...resume.session};}else{session={token:randomId(),id:randomId()};}session.expires=Date.now()+8*3600000;
-if(resume?.round)H.restore(resume.round,resume.teacher);if(!H.enableTeacher())throw Error('Selecciona al menos un alumno presente para continuar la clase.');active=true;running=false;generation++;await pushNow();renderPanel();H.render();msg('Aula conectada. Pulsa Comenzar ronda cuando quieras mostrar la primera pregunta.');await flushPending()}catch(e){active=false;renderPanel();msg(explain(e),true)}finally{busy=false;$('cloudStart').disabled=false}}
+if(resume?.round)H.restore(resume.round,resume.teacher);if(H.needsTurnHistory())H.seedTurnHistory(await loadHistory());if(!H.enableTeacher())throw Error('Selecciona al menos un alumno presente para continuar la clase.');active=true;running=false;generation++;await pushNow();renderPanel();H.render();msg('Aula conectada. Pulsa Comenzar ronda cuando quieras mostrar la primera pregunta.');await flushPending()}catch(e){active=false;renderPanel();msg(explain(e),true)}finally{busy=false;$('cloudStart').disabled=false}}
 function presentationReady(x=H.snapshot()){
  if(!session||!running||!x.question)return false;
  const key=JSON.stringify([x.question.id,x.student?.id,x.teacher.round,x.teacher.turn]);
@@ -168,4 +168,5 @@ setInterval(()=>{if(active&&navigator.onLine)schedulePush()},3600000);
 
 
 if(!projectionToken){setInterval(refreshSheetsConnection,10000);document.addEventListener('visibilitychange',refreshSheetsConnection)}
+
 
